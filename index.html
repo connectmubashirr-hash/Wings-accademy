@@ -714,8 +714,8 @@ footer ul a{transition:.2s}
         </form>
         <div class="success" id="success">
           <div class="tick"><svg><use href="#i-check"/></svg></div>
-          <h3>Application Ready!</h3>
-          <p>Thank you, <b id="sName"></b>. Tap below to send your details to Wings Academy on WhatsApp, or call us at <b>0312-9607289</b>.</p>
+          <h3 id="sTitle">Application Submitted!</h3>
+          <p>Thank you, <b id="sName"></b>. <span id="sMsg">We've received your application. For a faster reply, tap below to also send your details on WhatsApp</span>, or call us at <b>0312-9607289</b>.</p>
           <a id="waLink" href="#" target="_blank" rel="noopener" class="btn wa-btn"><svg class="ic"><use href="#i-wa"/></svg>Send on WhatsApp</a>
           <button class="link-btn" id="again">Submit another application</button>
         </div>
@@ -859,14 +859,31 @@ footer ul a{transition:.2s}
   lb.onclick=e=>{if(e.target===lb)lb.classList.remove('open')};
   addEventListener('keydown',e=>{if(!lb.classList.contains('open'))return;if(e.key==='Escape')lb.classList.remove('open');if(e.key==='ArrowLeft')show(idx-1);if(e.key==='ArrowRight')show(idx+1)});
 
-  // admission form -> WhatsApp
-  const form=$('#admForm'), ok=$('#success');
+  // Supabase (public publishable key — table is insert-only via RLS)
+  const SUPABASE_URL='https://ydpekajldvzffkoostqr.supabase.co';
+  const SUPABASE_KEY='sb_publishable_mhEbiqjXr3QitwtnvMeO0w_dqdDYsFD';
+  const saveAdmission=row=>fetch(SUPABASE_URL+'/rest/v1/admissions',{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(row)
+  }).then(r=>{if(!r.ok)return r.text().then(t=>{throw new Error(t||r.status)})});
+
+  // admission form -> Supabase + WhatsApp
+  const form=$('#admForm'), ok=$('#success'), submitBtn=form.querySelector('button[type=submit]'), btnHTML=submitBtn.innerHTML;
   const req=[['name',v=>v.trim().length>1],['father',v=>v.trim().length>1],['phone',v=>/^(\+?92|0)?3\d{2}[-\s]?\d{7}$/.test(v.replace(/\s/g,''))],['program',v=>!!v],['cls',v=>!!v]];
-  form.addEventListener('submit',e=>{
+  form.addEventListener('submit',async e=>{
     e.preventDefault(); let good=true;
     req.forEach(([id,fn])=>{const el=$('#'+id),f=el.closest('.field'),pass=fn(el.value);f.classList.toggle('invalid',!pass);if(!pass)good=false});
     if(!good){form.querySelector('.invalid input,.invalid select').focus();return}
     const v=id=>$('#'+id).value.trim(), board=form.querySelector('[name=board]:checked').value;
+    submitBtn.disabled=true; submitBtn.textContent='Submitting…';
+    let saved=true;
+    try{
+      await saveAdmission({student_name:v('name'),father_name:v('father'),phone:v('phone'),program:v('program'),class:v('cls'),board,school:v('school')||null,message:v('msg')||null});
+    }catch(err){saved=false;console.error('Supabase save failed:',err)} // still let them send via WhatsApp
+    $('#sTitle').textContent=saved?'Application Submitted!':'Almost Done!';
+    $('#sMsg').textContent=saved?"We've received your application. For a faster reply, tap below to also send your details on WhatsApp":"Please tap below to send your application to Wings Academy on WhatsApp";
+    submitBtn.disabled=false; submitBtn.innerHTML=btnHTML;
     const text=`*New Admission Application – Wings Academy*\n\nStudent: ${v('name')}\nFather: ${v('father')}\nPhone: ${v('phone')}\nProgram: ${v('program')}\nClass: ${v('cls')}\nBoard: ${board}\nSchool/College: ${v('school')||'-'}\nMessage: ${v('msg')||'-'}`;
     $('#waLink').href='https://wa.me/923129607289?text='+encodeURIComponent(text);
     $('#sName').textContent=v('name');
